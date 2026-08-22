@@ -60,4 +60,7 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     debugImplementation(libs.androidx.ui.tooling)
+
+    testImplementation("junit:junit:4.13.2")
 }
+

@@ -39,7 +39,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.trainlog.analyzer.data.model.TrainingRun
+import com.trainlog.analyzer.ui.components.LossChart
+import com.trainlog.analyzer.util.Calc
 import com.trainlog.analyzer.util.PdfExporter
+import com.trainlog.analyzer.util.ReportExporter
+
 import com.trainlog.analyzer.viewmodel.TrainingViewModel
 import kotlinx.coroutines.launch
 
@@ -90,6 +94,26 @@ fun DetailScreen(
                     ) {
                         Icon(Icons.Default.Share, contentDescription = "Export PDF")
                     }
+                    IconButton(
+                        onClick = {
+                            val current = run ?: return@IconButton
+                            val md = ReportExporter.markdown(current)
+                            val blob = java.io.File(context.cacheDir, "TrainLog_${current.name.replace(Regex("[^a-zA-Z0-9_-]"), "_")}.md")
+                            blob.writeText(md)
+                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                context, "${context.packageName}.fileprovider", blob
+                            )
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/markdown"
+                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                putExtra(android.content.Intent.EXTRA_TEXT, md)
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, "Export laporan"))
+                        }
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Export Markdown")
+                    }
                     IconButton(onClick = { onEdit(runId) }) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit")
                     }
@@ -129,6 +153,23 @@ fun DetailScreen(
                 Text("${current.date} • ${current.totalSteps} steps")
                 if (current.resumeFrom.isNotBlank()) {
                     Text("Resume from: ${current.resumeFrom}")
+                }
+                if (current.architecturePreset.isNotBlank()) {
+                    Text("Preset: ${current.architecturePreset}")
+                }
+                if (current.parentRunName.isNotBlank()) {
+                    Text("Parent: ${current.parentRunName}")
+                }
+                if (current.plateauAlert) {
+                    Text("Alert plateau aktif", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                }
+
+                val trainSeries = if (current.lossSeries.isNotBlank()) Calc.parseSeries(current.lossSeries) else emptyList()
+                val evalSeries = if (current.evalSeries.isNotBlank()) Calc.parseSeries(current.evalSeries) else emptyList()
+                if (trainSeries.isNotEmpty() || evalSeries.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    SectionHeader("Kurva loss")
+                    LossChart(train = trainSeries, eval = evalSeries)
                 }
 
                 HorizontalDivider(Modifier.padding(vertical = 12.dp))

@@ -1,33 +1,45 @@
 package com.trainlog.analyzer.ui.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.trainlog.analyzer.R
 import com.trainlog.analyzer.data.model.TrainingRun
+import com.trainlog.analyzer.ui.theme.Ok
+import com.trainlog.analyzer.ui.theme.Warn
 import com.trainlog.analyzer.viewmodel.TrainingViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,99 +47,183 @@ import com.trainlog.analyzer.viewmodel.TrainingViewModel
 fun HomeScreen(
     viewModel: TrainingViewModel,
     onAddClick: () -> Unit,
-    onRunClick: (Long) -> Unit
+    onRunClick: (Long) -> Unit,
+    onLabClick: () -> Unit,
+    onImportClick: () -> Unit = {},
+    onCompareClick: () -> Unit = {}
 ) {
     val runs by viewModel.allRuns.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("TrainLog", fontWeight = FontWeight.Bold) }
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(R.drawable.app_icon),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                        Spacer(Modifier.size(10.dp))
+                        Text("TrainLog", fontWeight = FontWeight.Bold)
+                    }
+                }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = onAddClick) {
-                Icon(Icons.Default.Add, contentDescription = "Tambah Run")
-            }
         }
     ) { padding ->
-        if (runs.isEmpty()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(32.dp),
-                verticalArrangement = Arrangement.Center
-            ) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Belum ada training run",
-                    style = MaterialTheme.typography.titleMedium
+                    "NOTEBOOK",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
                 )
-                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Tekan tombol + untuk menambah analisis baru",
+                    "Training runs",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "Catat kurva loss, diagnosis plateau, dan keputusan eksperimen.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(runs, key = { it.id }) { run ->
-                    RunCard(run = run, onClick = { onRunClick(run.id) })
+            item {
+                Card(
+                    onClick = onLabClick,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Row(
+                        Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Build,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.size(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Lab kalkulator", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "PPL, LR, FLOPs, schedule, mixture",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null)
+                    }
                 }
             }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Card(
+                        onClick = onImportClick,
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(2.dp)
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Import log", fontWeight = FontWeight.SemiBold)
+                            Text("Parse HF / loss", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Card(
+                        onClick = onCompareClick,
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(2.dp)
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Compare", fontWeight = FontWeight.SemiBold)
+                            Text("Side-by-side", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            if (runs.isEmpty()) {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(24.dp)) {
+                            Text("Belum ada run", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Tekan + untuk analisis baru",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            } else {
+                items(runs, key = { it.id }) { run ->
+                    RunCard(run) { onRunClick(run.id) }
+                }
+            }
+            item { Spacer(Modifier.height(72.dp)) }
         }
     }
 }
 
 @Composable
-fun RunCard(run: TrainingRun, onClick: () -> Unit) {
+private fun RunCard(run: TrainingRun, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(2.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = run.name.ifBlank { "Untitled Run" },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "${run.date} • ${run.totalSteps.ifBlank { "-" }} steps",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = if (run.isPlateau) "Status: Plateau" else "Status: Masih belajar",
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (run.isPlateau) MaterialTheme.colorScheme.tertiary
-                else MaterialTheme.colorScheme.primary
-            )
-            if (run.decision.isNotBlank()) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        run.name.ifBlank { "Untitled" },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Surface(
+                        color = if (run.isPlateau) Warn.copy(alpha = 0.15f) else Ok.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            if (run.isPlateau) "Plateau" else "Belajar",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (run.isPlateau) Warn else Ok,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Keputusan: ${run.decision}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-            if (run.finalEvalLoss.isNotBlank()) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "Eval Loss: ${run.finalEvalLoss}",
+                    listOfNotNull(
+                        run.date.ifBlank { null },
+                        run.totalSteps.takeIf { it.isNotBlank() }?.let { "$it steps" },
+                        run.finalEvalLoss.takeIf { it.isNotBlank() }?.let { "eval $it" }
+                    ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (run.decision.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(run.decision, style = MaterialTheme.typography.bodyMedium)
+                }
             }
+            Icon(Icons.Default.ChevronRight, contentDescription = null)
         }
     }
 }

@@ -14,6 +14,9 @@ interface TrainingRunDao {
     @Query("SELECT * FROM training_runs ORDER BY createdAt DESC")
     fun getAllRuns(): Flow<List<TrainingRun>>
 
+    @Query("SELECT * FROM training_runs ORDER BY createdAt DESC")
+    suspend fun getAllRunsSnapshot(): List<TrainingRun>
+
     @Query("SELECT * FROM training_runs WHERE id = :id")
     suspend fun getRunById(id: Long): TrainingRun?
 
