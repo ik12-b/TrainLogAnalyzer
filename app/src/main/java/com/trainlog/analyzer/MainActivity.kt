@@ -4,13 +4,21 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -18,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -32,6 +41,22 @@ import com.trainlog.analyzer.ui.home.HomeScreen
 import com.trainlog.analyzer.ui.importlog.ImportLogScreen
 import com.trainlog.analyzer.ui.lab.LabScreen
 import com.trainlog.analyzer.ui.navigation.Screen
+import com.trainlog.analyzer.ui.navigation.defaultEnter
+import com.trainlog.analyzer.ui.navigation.defaultExit
+import com.trainlog.analyzer.ui.navigation.defaultPopEnter
+import com.trainlog.analyzer.ui.navigation.defaultPopExit
+import com.trainlog.analyzer.ui.navigation.homeFromSplashEnter
+import com.trainlog.analyzer.ui.navigation.modalEnter
+import com.trainlog.analyzer.ui.navigation.modalExit
+import com.trainlog.analyzer.ui.navigation.modalPopEnter
+import com.trainlog.analyzer.ui.navigation.modalPopExit
+import com.trainlog.analyzer.ui.navigation.slideEnter
+import com.trainlog.analyzer.ui.navigation.slideExit
+import com.trainlog.analyzer.ui.navigation.slidePopEnter
+import com.trainlog.analyzer.ui.navigation.slidePopExit
+import com.trainlog.analyzer.ui.navigation.splashExit
+import com.trainlog.analyzer.ui.navigation.tabEnter
+import com.trainlog.analyzer.ui.navigation.tabExit
 import com.trainlog.analyzer.ui.splash.SplashScreen
 import com.trainlog.analyzer.ui.theme.TrainLogTheme
 import com.trainlog.analyzer.viewmodel.TrainingViewModel
@@ -55,11 +80,25 @@ fun TrainLogApp() {
     val backStack by navController.currentBackStackEntryAsState()
     val route = backStack?.destination?.route ?: Screen.Splash.route
     val showBottom = route == Screen.Home.route || route == Screen.Lab.route
+    val showFab = route == Screen.Home.route
 
     Scaffold(
         bottomBar = {
-            if (showBottom) {
-                NavigationBar {
+            AnimatedVisibility(
+                visible = showBottom,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(280)
+                ) + fadeIn(tween(280)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(220)
+                ) + fadeOut(tween(220))
+            ) {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                ) {
                     NavigationBarItem(
                         selected = route == Screen.Home.route,
                         onClick = {
@@ -83,9 +122,22 @@ fun TrainLogApp() {
             }
         },
         floatingActionButton = {
-            if (route == Screen.Home.route) {
+            AnimatedVisibility(
+                visible = showFab,
+                enter = fadeIn(tween(250)) + slideInVertically(
+                    initialOffsetY = { it / 2 },
+                    animationSpec = tween(280)
+                ),
+                exit = fadeOut(tween(180)) + slideOutVertically(
+                    targetOffsetY = { it / 2 },
+                    animationSpec = tween(200)
+                )
+            ) {
                 FloatingActionButton(
-                    onClick = { navController.navigate(Screen.Form.createRoute()) }
+                    onClick = { navController.navigate(Screen.Form.createRoute()) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Run baru")
                 }
@@ -95,16 +147,49 @@ fun TrainLogApp() {
         NavHost(
             navController = navController,
             startDestination = Screen.Splash.route,
-            modifier = Modifier.padding(padding)
+            modifier = Modifier.padding(padding),
+            enterTransition = defaultEnter,
+            exitTransition = defaultExit,
+            popEnterTransition = defaultPopEnter,
+            popExitTransition = defaultPopExit
         ) {
-            composable(Screen.Splash.route) {
+            // Splash → soft scale fade out
+            composable(
+                route = Screen.Splash.route,
+                exitTransition = { splashExit() },
+                popExitTransition = { splashExit() }
+            ) {
                 SplashScreen {
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
                 }
             }
-            composable(Screen.Home.route) {
+
+            // Home: from splash special enter; tab fade with Lab
+            composable(
+                route = Screen.Home.route,
+                enterTransition = {
+                    when (initialState.destination.route) {
+                        Screen.Splash.route -> homeFromSplashEnter()
+                        Screen.Lab.route -> tabEnter()
+                        else -> slideEnter()
+                    }
+                },
+                exitTransition = {
+                    when (targetState.destination.route) {
+                        Screen.Lab.route -> tabExit()
+                        else -> slideExit()
+                    }
+                },
+                popEnterTransition = {
+                    when (initialState.destination.route) {
+                        Screen.Lab.route -> tabEnter()
+                        else -> slidePopEnter()
+                    }
+                },
+                popExitTransition = { slidePopExit() }
+            ) {
                 HomeScreen(
                     viewModel = viewModel,
                     onAddClick = { navController.navigate(Screen.Form.createRoute()) },
@@ -114,8 +199,35 @@ fun TrainLogApp() {
                     onCompareClick = { navController.navigate(Screen.Compare.route) }
                 )
             }
-            composable(Screen.Lab.route) { LabScreen() }
-            composable(Screen.ImportLog.route) {
+
+            composable(
+                route = Screen.Lab.route,
+                enterTransition = {
+                    when (initialState.destination.route) {
+                        Screen.Home.route -> tabEnter()
+                        else -> slideEnter()
+                    }
+                },
+                exitTransition = {
+                    when (targetState.destination.route) {
+                        Screen.Home.route -> tabExit()
+                        else -> slideExit()
+                    }
+                },
+                popEnterTransition = { tabEnter() },
+                popExitTransition = { tabExit() }
+            ) {
+                LabScreen()
+            }
+
+            // Modal-style screens (slide up)
+            composable(
+                route = Screen.ImportLog.route,
+                enterTransition = { modalEnter() },
+                exitTransition = { modalExit() },
+                popEnterTransition = { modalPopEnter() },
+                popExitTransition = { modalPopExit() }
+            ) {
                 ImportLogScreen(
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
@@ -126,9 +238,17 @@ fun TrainLogApp() {
                     }
                 )
             }
-            composable(Screen.Compare.route) {
+
+            composable(
+                route = Screen.Compare.route,
+                enterTransition = { modalEnter() },
+                exitTransition = { modalExit() },
+                popEnterTransition = { modalPopEnter() },
+                popExitTransition = { modalPopExit() }
+            ) {
                 CompareScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
+
             composable(
                 route = "form?runId={runId}",
                 arguments = listOf(
@@ -137,7 +257,11 @@ fun TrainLogApp() {
                         nullable = true
                         defaultValue = null
                     }
-                )
+                ),
+                enterTransition = { modalEnter() },
+                exitTransition = { modalExit() },
+                popEnterTransition = { modalPopEnter() },
+                popExitTransition = { modalPopExit() }
             ) { entry ->
                 val runId = entry.arguments?.getString("runId")?.toLongOrNull()
                 FormScreen(
@@ -147,7 +271,14 @@ fun TrainLogApp() {
                     onSaved = { navController.popBackStack() }
                 )
             }
-            composable("form") {
+
+            composable(
+                route = "form",
+                enterTransition = { modalEnter() },
+                exitTransition = { modalExit() },
+                popEnterTransition = { modalPopEnter() },
+                popExitTransition = { modalPopExit() }
+            ) {
                 FormScreen(
                     viewModel = viewModel,
                     runId = null,
@@ -155,9 +286,15 @@ fun TrainLogApp() {
                     onSaved = { navController.popBackStack() }
                 )
             }
+
+            // Detail: horizontal slide
             composable(
                 route = Screen.Detail.route,
-                arguments = listOf(navArgument("runId") { type = NavType.LongType })
+                arguments = listOf(navArgument("runId") { type = NavType.LongType }),
+                enterTransition = { slideEnter() },
+                exitTransition = { slideExit() },
+                popEnterTransition = { slidePopEnter() },
+                popExitTransition = { slidePopExit() }
             ) { entry ->
                 val runId = entry.arguments?.getLong("runId") ?: return@composable
                 DetailScreen(

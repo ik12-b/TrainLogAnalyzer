@@ -5,7 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.abs
 import kotlin.math.exp
 
 class CalcTest {
@@ -29,10 +28,8 @@ class CalcTest {
 
     @Test
     fun cosineLr_at_start_and_end() {
-        val midish = Calc.cosineLr(0.0, 1000.0, 3e-4, 1e-6, 0.0)
-        assertEquals(3e-4, midish, 1e-12)
-        val end = Calc.cosineLr(1000.0, 1000.0, 3e-4, 1e-6, 0.0)
-        assertEquals(1e-6, end, 1e-12)
+        assertEquals(3e-4, Calc.cosineLr(0.0, 1000.0, 3e-4, 1e-6, 0.0), 1e-12)
+        assertEquals(1e-6, Calc.cosineLr(1000.0, 1000.0, 3e-4, 1e-6, 0.0), 1e-12)
     }
 
     @Test
@@ -58,23 +55,53 @@ class CalcTest {
 
     @Test
     fun logImporter_hf_style() {
-        val text = "{'loss': 2.5, 'epoch': 0.1}\n{'loss': 2.2, 'epoch': 0.2}\neval_loss: 2.3"
+        val text = "{'loss': 2.5, 'learning_rate': 1e-4, 'grad_norm': 0.5, 'epoch': 0.1}\n{'loss': 2.2, 'epoch': 0.2}\neval_loss: 2.3"
         val imp = LogImporter.import(text)
         assertTrue(imp.trainLosses.size >= 2)
         assertNotNull(imp.lastEvalLoss)
+        assertTrue(imp.learningRates.isNotEmpty())
+    }
+
+    @Test
+    fun logImporter_tunix_monitor() {
+        val text = """
+            [loss-monitor] train/loss: step=470275 value=1.8081
+            [loss-monitor] train/loss: step=553102 value=1.9185
+        """.trimIndent()
+        val imp = LogImporter.import(text)
+        assertEquals(2, imp.trainLosses.size)
+        assertEquals(553102, imp.lastStep)
+        assertEquals("Tunix / loss-monitor", imp.sourceHint)
+    }
+
+    @Test
+    fun logImporter_qwen_banner() {
+        val text = """
+            Seq len              : 1024
+            Global batch (2 GPU) : 128
+            Total params : 385,277,184 (385.3M)
+            GaLore rank       : 128
+            95%|█████████▍| 8600/9066 [11:10:21<4:14:27, 32.76s/it]
+            {'loss': '2.115', 'grad_norm': '1.049', 'learning_rate': '2.067e-06', 'epoch': '1.897'}
+        """.trimIndent()
+        val imp = LogImporter.import(text)
+        assertEquals(128, imp.globalBatch)
+        assertEquals(1024, imp.seqLen)
+        assertEquals(385277184L, imp.params)
+        assertEquals(8600, imp.lastStep)
+        assertEquals(9066, imp.totalSteps)
+        assertEquals(2.115, imp.lastTrainLoss!!, 1e-6)
+        assertEquals(32.76, imp.secPerStepEstimate!!, 1e-3)
     }
 
     @Test
     fun scaleLr_linear_and_sqrt() {
-        val lin = Calc.scaleLr(1e-4, 128.0, 256.0, false)!!
-        assertEquals(2e-4, lin, 1e-12)
-        val sq = Calc.scaleLr(1e-4, 100.0, 400.0, true)!!
-        assertEquals(2e-4, sq, 1e-12)
+        assertEquals(2e-4, Calc.scaleLr(1e-4, 128.0, 256.0, false)!!, 1e-12)
+        assertEquals(2e-4, Calc.scaleLr(1e-4, 100.0, 400.0, true)!!, 1e-12)
     }
 
     @Test
     fun chinchillaRatio() {
-        val r = Calc.chinchillaRatio(20e9, 1e9)!!
-        assertEquals(20.0, r, 1e-9)
+        assertEquals(20.0, Calc.chinchillaRatio(20e9, 1e9)!!, 1e-9)
     }
 }

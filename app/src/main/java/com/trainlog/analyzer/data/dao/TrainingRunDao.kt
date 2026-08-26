@@ -20,6 +20,9 @@ interface TrainingRunDao {
     @Query("SELECT * FROM training_runs WHERE id = :id")
     suspend fun getRunById(id: Long): TrainingRun?
 
+    @Query("SELECT COUNT(*) FROM training_runs")
+    suspend fun count(): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(run: TrainingRun): Long
 

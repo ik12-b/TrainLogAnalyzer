@@ -261,4 +261,33 @@ object Calc {
         }
         return best
     }
+
+    /** Model FLOPs Utilization ≈ (achieved FLOPs/s) / (peak FLOPs/s) * 100 */
+    fun mfuPercent(achievedFlopsPerSec: Double, peakFlopsPerSec: Double): Double? {
+        if (peakFlopsPerSec <= 0) return null
+        return (achievedFlopsPerSec / peakFlopsPerSec) * 100.0
+    }
+
+    /** Tokens/sec = global_batch * seq_len / sec_per_step */
+    fun tokensPerSec(globalBatch: Double, seqLen: Double, secPerStep: Double): Double? {
+        if (secPerStep <= 0) return null
+        return globalBatch * seqLen / secPerStep
+    }
+
+    /** Achieved training FLOPs/s ≈ 6 * N * tokens_per_sec */
+    fun achievedFlopsPerSec(params: Double, tokensPerSec: Double): Double =
+        6.0 * params * tokensPerSec
+
+    fun epochEquivalent(tokensSeen: Double, corpusUnique: Double): Double? {
+        if (corpusUnique <= 0) return null
+        return tokensSeen / corpusUnique
+    }
+
+    fun gpuHours(wallHours: Double, numGpus: Double) = wallHours * numGpus
+
+    fun wallHoursFromSteps(steps: Double, secPerStep: Double): Double? {
+        if (secPerStep <= 0 || steps <= 0) return null
+        return steps * secPerStep / 3600.0
+    }
+
 }

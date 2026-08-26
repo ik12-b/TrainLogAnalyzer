@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import com.trainlog.analyzer.data.dao.TrainingRunDao
 import com.trainlog.analyzer.data.model.TrainingRun
 
-@Database(entities = [TrainingRun::class], version = 2, exportSchema = false)
+@Database(entities = [TrainingRun::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun trainingRunDao(): TrainingRunDao
 

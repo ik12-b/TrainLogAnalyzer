@@ -32,7 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.trainlog.analyzer.data.model.TrainingRun
-import com.trainlog.analyzer.ui.components.LossChart
+import com.trainlog.analyzer.ui.components.LossChartCard
 import com.trainlog.analyzer.util.Calc
 import com.trainlog.analyzer.viewmodel.TrainingViewModel
 
@@ -75,10 +75,8 @@ fun CompareScreen(
 
             if (a != null && b != null) {
                 CompareTable(a, b)
-                Text("Loss A", style = MaterialTheme.typography.titleSmall)
-                LossChart(train = parseSeries(a.lossSeries))
-                Text("Loss B", style = MaterialTheme.typography.titleSmall)
-                LossChart(train = parseSeries(b.lossSeries))
+                LossChartCard(title = "Run A — ${a.name.ifBlank { "A" }}", train = parseSeries(a.lossSeries))
+                LossChartCard(title = "Run B — ${b.name.ifBlank { "B" }}", train = parseSeries(b.lossSeries))
             } else {
                 Text(
                     "Pilih dua run untuk melihat metrik berdampingan.",

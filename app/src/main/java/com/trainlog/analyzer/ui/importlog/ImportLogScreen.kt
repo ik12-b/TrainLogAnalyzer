@@ -31,7 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.trainlog.analyzer.data.model.TrainingRun
-import com.trainlog.analyzer.ui.components.LossChart
+import com.trainlog.analyzer.ui.components.LossChartCard
 import com.trainlog.analyzer.util.Calc
 import com.trainlog.analyzer.util.LogImporter
 import com.trainlog.analyzer.util.PlateauAlert
@@ -49,15 +49,19 @@ fun ImportLogScreen(
 ) {
     var name by remember { mutableStateOf("") }
     var raw by remember { mutableStateOf("") }
-    var window by remember { mutableStateOf("20") }
+    var window by remember { mutableStateOf("50") }
     var thr by remember { mutableStateOf("0.5") }
-    var secPerStep by remember { mutableStateOf("") }
     val context = LocalContext.current
 
     val imported = remember(raw) { if (raw.isBlank()) null else LogImporter.import(raw) }
-    val w = Calc.parseNum(window)?.toInt() ?: 20
+    val w = Calc.parseNum(window)?.toInt() ?: 50
     val threshold = Calc.parseNum(thr) ?: 0.5
-    val plateau = imported?.trainLosses?.let { Calc.plateauCheck(it, minOf(w, maxOf(1, it.size - 1)), threshold) }
+    val plateau = imported?.trainLosses?.let {
+        if (it.size < 2) null
+        else Calc.plateauCheck(it, minOf(w, maxOf(1, it.size - 1)), threshold)
+    }
+    val tokens = imported?.let { LogImporter.estimateTokens(it) }
+    val flops = imported?.let { LogImporter.estimateFlops(it) }
 
     Scaffold(
         topBar = {
@@ -80,8 +84,8 @@ fun ImportLogScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                "Tempel log HuggingFace Trainer / baris train/loss / deret angka. " +
-                    "App akan extract loss, hitung plateau, dan buat run baru.",
+                "Tempel log Qwen GaLore (HF Trainer) atau Gemma3 Tunix ([loss-monitor]). " +
+                    "App mengekstrak loss, step, LR, batch, params, detik/step, lalu deteksi plateau.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -89,14 +93,15 @@ fun ImportLogScreen(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Nama run") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("mis. Gemma3 Arabic / Qwen GaLore") }
             )
             OutlinedTextField(
                 value = raw,
                 onValueChange = { raw = it },
-                label = { Text("Isi log") },
+                label = { Text("Isi log (paste penuh atau cuplikan)") },
                 modifier = Modifier.fillMaxWidth(),
-                minLines = 10
+                minLines = 12
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -112,20 +117,16 @@ fun ImportLogScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
-            OutlinedTextField(
-                value = secPerStep,
-                onValueChange = { secPerStep = it },
-                label = { Text("Detik / step (opsional, untuk ETA)") },
-                modifier = Modifier.fillMaxWidth()
-            )
 
             imported?.let { imp ->
+                Text("Sumber: ${imp.sourceHint}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 Text(
                     "${imp.trainLosses.size} train pts · ${imp.evalLosses.size} eval pts" +
-                        (imp.lastStep?.let { " · last step $it" } ?: ""),
-                    fontWeight = FontWeight.Medium
+                        (imp.lastStep?.let { " · step $it" } ?: "") +
+                        (imp.totalSteps?.let { "/$it" } ?: "")
                 )
-                LossChart(
+                LossChartCard(
+                    title = "Kurva loss (import)",
                     train = imp.trainLosses,
                     eval = imp.evalLosses,
                     plateauFromIndex = plateau?.let { imp.trainLosses.size - 1 - it.window }
@@ -140,10 +141,26 @@ fun ImportLogScreen(
                     )
                 }
                 Text(
-                    "Train ${imp.lastTrainLoss?.let { "%.4f".format(it) } ?: "—"} · " +
+                    "Loss ${imp.lastTrainLoss?.let { "%.4f".format(it) } ?: "—"} · " +
                         "Eval ${imp.lastEvalLoss?.let { "%.4f".format(it) } ?: "—"} · " +
                         "PPL ${imp.perplexity?.let { "%.2f".format(it) } ?: "—"}"
                 )
+                Text(
+                    "LR ${imp.lastLr?.let { "%.3e".format(it) } ?: "—"} · " +
+                        "grad ${imp.lastGradNorm?.let { "%.3f".format(it) } ?: "—"} · " +
+                        "epoch ${imp.lastEpoch?.let { "%.3f".format(it) } ?: "—"}"
+                )
+                Text(
+                    "batch ${imp.globalBatch ?: "—"} · seq ${imp.seqLen ?: "—"} · " +
+                        "params ${imp.params?.let { "%,d".format(it) } ?: "—"} · " +
+                        "s/it ${imp.secPerStepEstimate?.let { "%.2f".format(it) } ?: "—"}"
+                )
+                if (tokens != null) {
+                    Text("Tokens est. ${Calc.formatTokens(tokens)} · FLOPs ${flops?.let { Calc.formatFlops(it) } ?: "—"}")
+                }
+                imp.resumeFrom?.let {
+                    Text("Resume: ${it.takeLast(48)}", style = MaterialTheme.typography.bodySmall)
+                }
             }
 
             Button(
@@ -151,10 +168,24 @@ fun ImportLogScreen(
                     val imp = imported ?: return@Button
                     val p = plateau
                     val date = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date())
+                    val stepLabel = when {
+                        imp.lastStep != null && imp.totalSteps != null ->
+                            "${imp.lastStep} / ${imp.totalSteps}"
+                        imp.lastStep != null -> imp.lastStep.toString()
+                        else -> imp.trainLosses.size.toString()
+                    }
+                    val defaultName = when {
+                        name.isNotBlank() -> name
+                        imp.sourceHint.contains("Tunix") -> "Gemma3 Tunix"
+                        imp.sourceHint.contains("GaLore") || imp.sourceHint.contains("HuggingFace") ->
+                            "Qwen GaLore"
+                        else -> "Imported run"
+                    }
                     val run = TrainingRun(
-                        name = name.ifBlank { "Imported run" },
+                        name = defaultName,
                         date = date,
-                        totalSteps = imp.lastStep?.toString() ?: imp.trainLosses.size.toString(),
+                        totalSteps = stepLabel,
+                        resumeFrom = imp.resumeFrom?.substringAfterLast('/') ?: "",
                         finalTrainLoss = imp.lastTrainLoss?.let { "%.4f".format(it) } ?: "",
                         finalEvalLoss = imp.lastEvalLoss?.let { "%.4f".format(it) } ?: "",
                         bestEvalLoss = imp.evalLosses.minOrNull()?.let { "%.4f".format(it) } ?: "",
@@ -165,10 +196,38 @@ fun ImportLogScreen(
                         perplexity = imp.perplexity?.let { "%.3f".format(it) } ?: "",
                         lossSeries = LogImporter.seriesToText(imp.trainLosses),
                         evalSeries = LogImporter.seriesToText(imp.evalLosses),
-                        secPerStep = secPerStep,
+                        secPerStep = imp.secPerStepEstimate?.let { "%.2f".format(it) } ?: "",
+                        tokensEstimate = tokens?.let { Calc.formatTokens(it) } ?: "",
+                        flopsEstimate = flops?.let { Calc.formatFlops(it) } ?: "",
                         plateauAlert = p?.isPlateau == true,
                         diagnosisFlat = p?.isPlateau == true,
-                        decision = if (p?.isPlateau == true) "Stop & pakai checkpoint terbaik" else "Lanjut training"
+                        diagnosisNoisy = imp.trainLosses.size > 10 &&
+                            (imp.trainLosses.takeLast(20).let { s ->
+                                if (s.isEmpty()) false
+                                else (s.maxOrNull()!! - s.minOrNull()!!) > 0.3
+                            }),
+                        decision = if (p?.isPlateau == true) "Stop & pakai checkpoint terbaik"
+                        else "Lanjut training",
+                        architecturePreset = when {
+                            (imp.params ?: 0) in 300_000_000L..500_000_000L -> "0.5B / 500M"
+                            else -> ""
+                        },
+                        totalParams = imp.params?.toString() ?: "",
+                        seqLen = imp.seqLen?.toString() ?: "",
+                        globalBatch = imp.globalBatch?.toString() ?: "",
+                        galoreRank = imp.galoreRank?.toString() ?: "",
+                        lastLr = imp.lastLr?.let { "%.4e".format(it) } ?: "",
+                        lastGradNorm = imp.lastGradNorm?.let { "%.4f".format(it) } ?: "",
+                        conclusion = buildString {
+                            append("Parsed as ${imp.sourceHint}. ")
+                            append("${imp.trainLosses.size} loss points. ")
+                            p?.let {
+                                append(
+                                    "Rel improvement ${"%.3f".format(it.relPct)}% over window ${it.window}. "
+                                )
+                            }
+                            imp.lastLr?.let { append("Last LR ${"%.3e".format(it)}. ") }
+                        }
                     )
                     if (p?.isPlateau == true) {
                         PlateauAlert.notifyIfNeeded(

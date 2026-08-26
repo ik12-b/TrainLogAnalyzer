@@ -1,5 +1,6 @@
 package com.trainlog.analyzer.ui.detail
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,13 +40,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.trainlog.analyzer.data.model.TrainingRun
-import com.trainlog.analyzer.ui.components.LossChart
+import com.trainlog.analyzer.ui.components.LossChartCard
 import com.trainlog.analyzer.util.Calc
 import com.trainlog.analyzer.util.PdfExporter
 import com.trainlog.analyzer.util.ReportExporter
-
 import com.trainlog.analyzer.viewmodel.TrainingViewModel
 import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,263 +57,223 @@ fun DetailScreen(
     onEdit: (Long) -> Unit
 ) {
     var run by remember { mutableStateOf<TrainingRun?>(null) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(runId) {
         run = viewModel.getRun(runId)
     }
 
+    val current = run
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(run?.name?.ifBlank { "Detail" } ?: "Detail") },
+                title = { Text(current?.name?.ifBlank { "Run" } ?: "Run") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            val current = run
-                            if (current != null) {
-                                try {
-                                    PdfExporter.exportAndShare(context, current)
-                                } catch (e: Exception) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            "Gagal export PDF: ${e.message ?: "unknown"}"
-                                        )
-                                    }
-                                }
+                    IconButton(onClick = {
+                        val r = run ?: return@IconButton
+                        try {
+                            PdfExporter.exportAndShare(context, r)
+                        } catch (e: Exception) {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("PDF gagal: ${e.message}")
                             }
                         }
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "Export PDF")
+                    }) {
+                        Icon(Icons.Default.Share, "PDF")
                     }
-                    IconButton(
-                        onClick = {
-                            val current = run ?: return@IconButton
-                            val md = ReportExporter.markdown(current)
-                            val blob = java.io.File(context.cacheDir, "TrainLog_${current.name.replace(Regex("[^a-zA-Z0-9_-]"), "_")}.md")
-                            blob.writeText(md)
-                            val uri = androidx.core.content.FileProvider.getUriForFile(
-                                context, "${context.packageName}.fileprovider", blob
+                    IconButton(onClick = {
+                        val r = run ?: return@IconButton
+                        val md = ReportExporter.markdown(r)
+                        val f = File(context.cacheDir, "TrainLog_${r.name.replace(Regex("[^a-zA-Z0-9_-]"), "_")}.md")
+                        f.writeText(md)
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            context, "${context.packageName}.fileprovider", f
+                        )
+                        context.startActivity(
+                            Intent.createChooser(
+                                Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/markdown"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    putExtra(Intent.EXTRA_TEXT, md)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                },
+                                "Export Markdown"
                             )
-                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/markdown"
-                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                putExtra(android.content.Intent.EXTRA_TEXT, md)
-                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(android.content.Intent.createChooser(intent, "Export laporan"))
-                        }
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "Export Markdown")
+                        )
+                    }) {
+                        Icon(Icons.Default.Share, "MD")
                     }
                     IconButton(onClick = { onEdit(runId) }) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit")
+                        Icon(Icons.Default.Edit, "Edit")
                     }
-                    IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Hapus")
+                    IconButton(onClick = { showDelete = true }) {
+                        Icon(Icons.Default.Delete, "Delete")
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        val current = run
         if (current == null) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp)
-            ) {
-                Text("Memuat...")
+            Text("Loading…", Modifier.padding(padding).padding(16.dp))
+            return@Scaffold
+        }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            StatusLine(current)
+            Section("1. Identitas")
+            KV("Tanggal", current.date)
+            KV("Git", current.gitCommit)
+            KV("Seed", current.seed)
+            KV("Host", current.hostname)
+            KV("Hardware", current.hardware)
+            KV("Framework", current.frameworkVersions)
+            KV("Parent", current.parentRunName)
+            if (current.configYaml.isNotBlank()) Text(current.configYaml, style = MaterialTheme.typography.bodySmall)
+
+            Section("2. Model")
+            KV("Preset", current.architecturePreset)
+            KV("Layers / d / heads", listOf(current.numLayers, current.embedDim, current.numHeads).filter { it.isNotBlank() }.joinToString(" / "))
+            KV("Vocab", current.vocabSize)
+            KV("Params", current.totalParams + if (current.trainableParams.isNotBlank()) " (train ${current.trainableParams})" else "")
+            KV("Precision / attn", "${current.precision} / ${current.attnImpl}")
+            KV("Resume", current.resumeFrom)
+            KV("GaLore / LoRA", listOfNotNull(
+                current.galoreRank.takeIf { it.isNotBlank() }?.let { "rank $it" },
+                current.galoreGap.takeIf { it.isNotBlank() }?.let { "gap $it" },
+                current.loraRank.takeIf { it.isNotBlank() }?.let { "lora $it" }
+            ).joinToString(", "))
+            if (current.initNotes.isNotBlank()) Text(current.initNotes, style = MaterialTheme.typography.bodySmall)
+
+            Section("3. Data")
+            KV("Sources", current.dataSources)
+            KV("Seq / batch", "seq ${current.seqLen} · global ${current.globalBatch} · micro ${current.microBatch} × accum ${current.gradAccum} · ${current.numGpus} GPU")
+            KV("Packing", current.packingEfficiency)
+            KV("Tokens", current.tokensEstimate)
+            KV("Mixture", current.mixtureWeights)
+            KV("Per domain", current.tokensPerDomain)
+            KV("Held-out", current.heldOutSize)
+            KV("Epoch eq.", current.epochEquivalent)
+
+            Section("4. Optim")
+            KV("Optimizer", current.optimizer)
+            KV("LR", "${current.lrMax} → ${current.lrMin} (warmup ${current.warmupSteps})")
+            KV("Schedule", current.scheduleType)
+            KV("WD / clip", "${current.weightDecay} / ${current.gradClip}")
+            KV("Last LR / grad", "${current.lastLr} / ${current.lastGradNorm}")
+
+            Section("5. Learning curve")
+            KV("Steps", current.totalSteps)
+            KV("Train / Eval / Best", "${current.finalTrainLoss} / ${current.finalEvalLoss} / ${current.bestEvalLoss}")
+            KV("Rel. improvement", current.relativeImprovement.let { if (it.isBlank()) "—" else "$it %" })
+            KV("Gap / PPL / Noise", "${current.trainEvalGap} / ${current.perplexity} / ${current.noiseLevel}")
+            val trainSeries = if (current.lossSeries.isNotBlank()) Calc.parseSeries(current.lossSeries) else emptyList()
+            val evalSeries = if (current.evalSeries.isNotBlank()) Calc.parseSeries(current.evalSeries) else emptyList()
+            if (trainSeries.isNotEmpty() || evalSeries.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                LossChartCard(title = "Kurva loss", train = trainSeries, eval = evalSeries)
             }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = if (current.isPlateau) "Status: Plateau" else "Status: Masih belajar",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (current.isPlateau) MaterialTheme.colorScheme.tertiary
-                    else MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-                Text("${current.date} • ${current.totalSteps} steps")
-                if (current.resumeFrom.isNotBlank()) {
-                    Text("Resume from: ${current.resumeFrom}")
-                }
-                if (current.architecturePreset.isNotBlank()) {
-                    Text("Preset: ${current.architecturePreset}")
-                }
-                if (current.parentRunName.isNotBlank()) {
-                    Text("Parent: ${current.parentRunName}")
-                }
-                if (current.plateauAlert) {
-                    Text("Alert plateau aktif", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
-                }
 
-                val trainSeries = if (current.lossSeries.isNotBlank()) Calc.parseSeries(current.lossSeries) else emptyList()
-                val evalSeries = if (current.evalSeries.isNotBlank()) Calc.parseSeries(current.evalSeries) else emptyList()
-                if (trainSeries.isNotEmpty() || evalSeries.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    SectionHeader("Kurva loss")
-                    LossChart(train = trainSeries, eval = evalSeries)
-                }
+            Section("6. Compute")
+            KV("Sec/step", current.secPerStep)
+            KV("Tok/s", current.tokensPerSec)
+            KV("FLOPs", current.flopsEstimate)
+            KV("MFU", current.mfuPercent.let { if (it.isBlank()) "—" else "$it %" })
+            KV("Wall / GPU-h", "${current.wallClockHours} h / ${current.gpuHours} GPU-h")
+            KV("Cost", current.estimatedCost)
 
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            Section("7. Downstream")
+            if (current.task1Name.isNotBlank()) KV(current.task1Name, current.task1Result)
+            if (current.task2Name.isNotBlank()) KV(current.task2Name, current.task2Result)
+            if (current.task3Name.isNotBlank()) KV(current.task3Name, current.task3Result)
+            KV("Forgetting", if (current.hasForgetting) "Ya — ${current.forgettingNote}" else "Aman")
+            KV("Harness", current.evalHarness)
+            if (current.sampleNotes.isNotBlank()) Text(current.sampleNotes, style = MaterialTheme.typography.bodySmall)
 
-                SectionHeader("Learning Curve")
-                InfoRow("Train Loss", current.finalTrainLoss)
-                InfoRow("Eval Loss", current.finalEvalLoss)
-                InfoRow("Best Eval Loss", current.bestEvalLoss)
-                InfoRow(
-                    "Rel. Improvement",
-                    current.relativeImprovement.let { if (it.isNotBlank()) "$it%" else "-" }
-                )
-                InfoRow("Train–Eval Gap", current.trainEvalGap)
-                InfoRow("Noise Level", current.noiseLevel)
+            Section("8. Checkpoint")
+            KV("Final", current.finalCheckpoint)
+            KV("Best", current.bestCheckpoint)
+            if (current.checkpointNotes.isNotBlank()) Text(current.checkpointNotes, style = MaterialTheme.typography.bodySmall)
 
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                SectionHeader("Downstream")
-                InfoRow("Perplexity", current.perplexity)
-                if (current.task1Name.isNotBlank()) {
-                    InfoRow(current.task1Name, current.task1Result)
-                }
-                if (current.task2Name.isNotBlank()) {
-                    InfoRow(current.task2Name, current.task2Result)
-                }
-                InfoRow(
-                    "Catastrophic Forgetting",
-                    if (current.hasForgetting) "Ada degradasi" else "Aman"
-                )
-
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                SectionHeader("Diagnosis")
-                val diagnoses = buildList {
-                    if (current.diagnosisFlat) add("Train & Eval flat")
-                    if (current.diagnosisOverfit) add("Overfitting")
-                    if (current.diagnosisStillLearning) add("Masih ada ruang belajar")
-                    if (current.diagnosisNoisy) add("Sangat noisy")
-                    if (current.diagnosisDownstreamBad) add("Downstream jelek")
-                }
-                if (diagnoses.isEmpty()) {
-                    Text("-", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    diagnoses.forEach { Text("• $it") }
-                }
-                if (current.rootCause.isNotBlank()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("Akar masalah:", fontWeight = FontWeight.Medium)
-                    Text(current.rootCause)
-                }
-
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                SectionHeader("Keputusan")
-                Text(
-                    text = current.decision.ifBlank { "-" },
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
-                )
-                if (current.finalCheckpoint.isNotBlank()) {
-                    InfoRow("Checkpoint", current.finalCheckpoint)
-                }
-
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                SectionHeader("Next Experiment Plan")
-                if (current.hypothesis.isNotBlank()) {
-                    Text("Hipotesis:", fontWeight = FontWeight.Medium)
-                    Text(current.hypothesis)
-                    Spacer(Modifier.height(8.dp))
-                }
-                if (current.whatChanged.isNotBlank()) {
-                    Text("Yang diubah:", fontWeight = FontWeight.Medium)
-                    Text(current.whatChanged)
-                    Spacer(Modifier.height(8.dp))
-                }
-                InfoRow("Priority", current.priority)
-
-                if (current.conclusion.isNotBlank()) {
-                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                    SectionHeader("Kesimpulan")
-                    Text(current.conclusion)
-                }
-
-                Spacer(Modifier.height(32.dp))
+            Section("9. Keputusan")
+            val diags = listOfNotNull(
+                current.diagnosisFlat.takeIf { it }?.let { "Flat" },
+                current.diagnosisOverfit.takeIf { it }?.let { "Overfit" },
+                current.diagnosisStillLearning.takeIf { it }?.let { "Masih belajar" },
+                current.diagnosisNoisy.takeIf { it }?.let { "Noisy" },
+                current.diagnosisDownstreamBad.takeIf { it }?.let { "Downstream jelek" }
+            )
+            KV("Diagnosis", diags.joinToString(", ").ifBlank { "—" })
+            KV("Root cause", current.rootCause)
+            KV("Hipotesis", current.hypothesis)
+            KV("Perubahan", current.whatChanged)
+            KV("Keputusan", current.decision)
+            KV("Priority", current.priority)
+            if (current.conclusion.isNotBlank()) {
+                Text(current.conclusion, style = MaterialTheme.typography.bodyMedium)
             }
+
+            Section("10. Failures")
+            Text(current.failureNotes.ifBlank { "—" }, style = MaterialTheme.typography.bodyMedium)
+
+            Spacer(Modifier.height(32.dp))
         }
     }
 
-    if (showDeleteDialog && run != null) {
+    if (showDelete && current != null) {
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Hapus Run?") },
-            text = { Text("Data analisis \"${run!!.name}\" akan dihapus permanen.") },
+            onDismissRequest = { showDelete = false },
+            title = { Text("Hapus run?") },
+            text = { Text("Hapus \"${current.name}\"?") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteRun(run!!)
-                        showDeleteDialog = false
-                        onBack()
-                    }
-                ) {
-                    Text("Hapus", color = MaterialTheme.colorScheme.error)
-                }
+                TextButton(onClick = {
+                    viewModel.deleteRun(current)
+                    showDelete = false
+                    onBack()
+                }) { Text("Hapus") }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Batal")
-                }
+                TextButton(onClick = { showDelete = false }) { Text("Batal") }
             }
         )
     }
 }
 
 @Composable
-private fun SectionHeader(title: String) {
+private fun StatusLine(r: TrainingRun) {
     Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
+        if (r.isPlateau) "Status: PLATEAU" else "Status: training / review",
         fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(bottom = 4.dp)
+        color = if (r.isPlateau) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     )
 }
 
 @Composable
-private fun InfoRow(label: String, value: String) {
+private fun Section(title: String) {
+    Spacer(Modifier.height(8.dp))
+    Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+}
+
+@Composable
+private fun KV(label: String, value: String) {
     if (value.isBlank()) return
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
-    ) {
-        Text(
-            text = "$label:",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(0.45f)
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(0.55f)
-        )
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, Modifier.weight(0.4f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, Modifier.weight(0.6f), style = MaterialTheme.typography.bodySmall)
     }
 }

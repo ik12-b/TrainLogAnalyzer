@@ -2,13 +2,18 @@ package com.trainlog.analyzer.util
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Shader
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.trainlog.analyzer.data.model.TrainingRun
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.max
 
 object PdfExporter {
 
@@ -19,169 +24,430 @@ object PdfExporter {
 
     private fun createPdf(context: Context, run: TrainingRun): File {
         val document = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4
+        val pageW = 595 // A4 points
+        val pageH = 842
+        val pageInfo = PdfDocument.PageInfo.Builder(pageW, pageH, 1).create()
         var page = document.startPage(pageInfo)
         var canvas = page.canvas
+        var pageIndex = 1
 
-        val titlePaint = Paint().apply {
-            textSize = 18f
+        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 20f
             isFakeBoldText = true
-            color = 0xFF1565C0.toInt()
+            color = 0xFF0F766E.toInt() // teal
         }
-        val headingPaint = Paint().apply {
+        val subtitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 11f
+            color = 0xFF64748B.toInt()
+        }
+        val headingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 13f
             isFakeBoldText = true
-            color = 0xFF212121.toInt()
+            color = 0xFF0F172A.toInt()
         }
-        val bodyPaint = Paint().apply {
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 11f
-            color = 0xFF424242.toInt()
+            color = 0xFF334155.toInt()
         }
-        val labelPaint = Paint().apply {
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 10f
+            isFakeBoldText = true
+            color = 0xFF64748B.toInt()
+        }
+        val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 11f
             isFakeBoldText = true
-            color = 0xFF616161.toInt()
+            color = 0xFF0F766E.toInt()
+        }
+        val badgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = 0xFFCCFBF1.toInt()
+        }
+        val badgeText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 10f
+            isFakeBoldText = true
+            color = 0xFF0F766E.toInt()
         }
 
-        var y = 50f
+        var y = 48f
         val left = 40f
-        val maxWidth = 515f
-        val lineHeight = 16f
-        val pageHeight = 800f
+        val right = pageW - 40f
+        val maxWidth = right - left
+        val lineHeight = 15f
+        val bottomLimit = pageH - 48f
 
-        fun checkNewPage() {
-            if (y > pageHeight) {
-                document.finishPage(page)
-                page = document.startPage(pageInfo)
-                canvas = page.canvas
-                y = 50f
-            }
+        fun newPage() {
+            document.finishPage(page)
+            pageIndex++
+            val info = PdfDocument.PageInfo.Builder(pageW, pageH, pageIndex).create()
+            page = document.startPage(info)
+            canvas = page.canvas
+            y = 48f
+            // footer-ish page number later
         }
 
-        fun drawLine(text: String, paint: Paint = bodyPaint) {
-            checkNewPage()
-            // Simple word wrap
+        fun ensure(space: Float = lineHeight) {
+            if (y + space > bottomLimit) newPage()
+        }
+
+        fun drawWrapped(text: String, paint: Paint = bodyPaint) {
             val words = text.split(" ")
             var line = ""
             for (word in words) {
                 val test = if (line.isEmpty()) word else "$line $word"
                 if (paint.measureText(test) > maxWidth) {
+                    ensure()
                     canvas.drawText(line, left, y, paint)
                     y += lineHeight
-                    checkNewPage()
                     line = word
                 } else {
                     line = test
                 }
             }
             if (line.isNotEmpty()) {
+                ensure()
                 canvas.drawText(line, left, y, paint)
                 y += lineHeight
             }
         }
 
-        fun drawRow(label: String, value: String) {
-            if (value.isBlank()) return
-            checkNewPage()
-            canvas.drawText("$label:", left, y, labelPaint)
-            canvas.drawText(value, left + 160f, y, bodyPaint)
+        fun section(title: String) {
+            y += 10f
+            ensure(24f)
+            canvas.drawText(title, left, y, headingPaint)
+            y += 6f
+            val rule = Paint().apply {
+                color = 0xFFCCFBF1.toInt()
+                strokeWidth = 2f
+            }
+            canvas.drawLine(left, y, right, y, rule)
+            y += 16f
+        }
+
+        fun kv(label: String, value: String) {
+            ensure()
+            canvas.drawText(label, left, y, labelPaint)
+            canvas.drawText(value.ifBlank { "—" }, left + 130f, y, bodyPaint)
             y += lineHeight
         }
 
-        fun section(title: String) {
-            y += 10f
-            checkNewPage()
-            canvas.drawText(title, left, y, headingPaint)
-            y += lineHeight + 4f
+        // ——— Header ———
+        canvas.drawText(run.name.ifBlank { "Training Run" }, left, y, titlePaint)
+        y += 18f
+        canvas.drawText(
+            "TrainLog report · ${run.date.ifBlank { "—" }}",
+            left,
+            y,
+            subtitlePaint
+        )
+        y += 14f
+
+        // Status badge
+        val status = if (run.isPlateau) "PLATEAU" else "TRAINING"
+        val statusColor = if (run.isPlateau) 0xFFFEE2E2.toInt() else 0xFFCCFBF1.toInt()
+        val statusTextColor = if (run.isPlateau) 0xFFB91C1C.toInt() else 0xFF0F766E.toInt()
+        val sw = badgeText.measureText(status) + 20f
+        badgePaint.color = statusColor
+        badgeText.color = statusTextColor
+        canvas.drawRoundRect(left, y - 12f, left + sw, y + 6f, 8f, 8f, badgePaint)
+        canvas.drawText(status, left + 10f, y, badgeText)
+        y += 22f
+
+        // ——— Metrics ———
+        section("Ringkasan metrik")
+        kv("Steps", run.totalSteps)
+        kv("Resume", run.resumeFrom)
+        kv("Train loss", run.finalTrainLoss)
+        kv("Eval loss", run.finalEvalLoss)
+        kv("Best eval", run.bestEvalLoss)
+        kv("Rel. improvement", run.relativeImprovement.let {
+            if (it.isBlank()) "—" else "$it %"
+        })
+        kv("Train–eval gap", run.trainEvalGap)
+        kv("Perplexity", run.perplexity)
+        kv("Tokens est.", run.tokensEstimate)
+        kv("FLOPs est.", run.flopsEstimate)
+        kv("Sec / step", run.secPerStep)
+
+        // ——— Chart ———
+        val train = if (run.lossSeries.isNotBlank()) Calc.parseSeries(run.lossSeries) else emptyList()
+        val eval = if (run.evalSeries.isNotBlank()) Calc.parseSeries(run.evalSeries) else emptyList()
+
+        if (train.isNotEmpty() || eval.isNotEmpty()) {
+            section("Kurva loss")
+            val chartH = 200f
+            ensure(chartH + 40f)
+            y = drawLossChart(
+                canvas = canvas,
+                train = train,
+                eval = eval,
+                left = left,
+                top = y,
+                width = maxWidth,
+                height = chartH
+            )
+            y += 12f
+            // legend
+            val legTrain = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0xFF0F766E.toInt(); strokeWidth = 3f
+            }
+            val legEval = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0xFF7C3AED.toInt(); strokeWidth = 3f
+            }
+            val legEma = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0xFFEA580C.toInt(); strokeWidth = 2f
+                pathEffect = android.graphics.DashPathEffect(floatArrayOf(8f, 6f), 0f)
+            }
+            canvas.drawLine(left, y, left + 18f, y, legTrain)
+            canvas.drawText("Train", left + 24f, y + 4f, bodyPaint)
+            canvas.drawLine(left + 80f, y, left + 98f, y, legEval)
+            canvas.drawText("Eval", left + 104f, y + 4f, bodyPaint)
+            canvas.drawLine(left + 155f, y, left + 173f, y, legEma)
+            canvas.drawText("EMA", left + 179f, y + 4f, bodyPaint)
+            y += 20f
+
+            // stats under chart
+            val last = train.lastOrNull()
+            val minV = train.minOrNull()
+            val maxV = train.maxOrNull()
+            val mean20 = train.takeLast(minOf(20, train.size)).let {
+                if (it.isEmpty()) null else it.average()
+            }
+            canvas.drawText(
+                "Last ${last?.let { "%.4f".format(it) } ?: "—"}   " +
+                    "Min ${minV?.let { "%.4f".format(it) } ?: "—"}   " +
+                    "Max ${maxV?.let { "%.4f".format(it) } ?: "—"}   " +
+                    "μ20 ${mean20?.let { "%.4f".format(it) } ?: "—"}   " +
+                    "(${train.size} points)",
+                left,
+                y,
+                subtitlePaint
+            )
+            y += 18f
+        } else {
+            section("Kurva loss")
+            drawWrapped("Tidak ada deret loss tersimpan. Import log dulu agar grafik muncul di PDF.")
         }
 
-        // Title
-        drawLine("TrainLog — Training Run Analysis", titlePaint)
-        y += 8f
-        drawLine(run.name.ifBlank { "Untitled Run" }, headingPaint)
-        y += 4f
-        drawLine("${run.date}  |  ${run.totalSteps} steps", bodyPaint)
-        if (run.resumeFrom.isNotBlank()) {
-            drawLine("Resume from: ${run.resumeFrom}", bodyPaint)
-        }
-        y += 6f
-
-        // Status
-        val status = if (run.isPlateau) "Status: Plateau" else "Status: Masih belajar"
-        drawLine(status, headingPaint)
-
-        section("1. Learning Curve")
-        drawRow("Train Loss", run.finalTrainLoss)
-        drawRow("Eval Loss", run.finalEvalLoss)
-        drawRow("Best Eval Loss", run.bestEvalLoss)
-        drawRow("Rel. Improvement", if (run.relativeImprovement.isNotBlank()) "${run.relativeImprovement}%" else "")
-        drawRow("Train–Eval Gap", run.trainEvalGap)
-        drawRow("Noise Level", run.noiseLevel)
-
-        section("2. Downstream & Generalization")
-        drawRow("Perplexity", run.perplexity)
-        if (run.task1Name.isNotBlank()) drawRow(run.task1Name, run.task1Result)
-        if (run.task2Name.isNotBlank()) drawRow(run.task2Name, run.task2Result)
-        drawRow("Catastrophic Forgetting", if (run.hasForgetting) "Ada degradasi" else "Aman")
-
-        section("3. Diagnosis")
+        // ——— Downstream ———
+        section("Downstream & diagnosis")
+        if (run.task1Name.isNotBlank()) kv(run.task1Name, run.task1Result)
+        if (run.task2Name.isNotBlank()) kv(run.task2Name, run.task2Result)
+        if (run.task3Name.isNotBlank()) kv(run.task3Name, run.task3Result)
+        kv("Forgetting", if (run.hasForgetting) "Ya — ${run.forgettingNote}" else "Aman")
         val diagnoses = buildList {
-            if (run.diagnosisFlat) add("Train & Eval flat")
+            if (run.diagnosisFlat) add("Train & eval flat")
             if (run.diagnosisOverfit) add("Overfitting")
-            if (run.diagnosisStillLearning) add("Masih ada ruang belajar")
-            if (run.diagnosisNoisy) add("Sangat noisy")
+            if (run.diagnosisStillLearning) add("Masih belajar")
+            if (run.diagnosisNoisy) add("Noisy loss")
             if (run.diagnosisDownstreamBad) add("Downstream jelek")
         }
-        if (diagnoses.isEmpty()) {
-            drawLine("-")
-        } else {
-            diagnoses.forEach { drawLine("• $it") }
-        }
+        kv("Diagnosis", diagnoses.joinToString(", ").ifBlank { "—" })
         if (run.rootCause.isNotBlank()) {
-            y += 4f
-            drawLine("Akar masalah:", labelPaint)
-            drawLine(run.rootCause)
+            drawWrapped("Akar masalah: ${run.rootCause}")
         }
 
-        section("4. Keputusan")
-        drawLine(run.decision.ifBlank { "-" })
-        drawRow("Checkpoint final", run.finalCheckpoint)
-
-        section("5. Next Experiment Plan")
-        if (run.hypothesis.isNotBlank()) {
-            drawLine("Hipotesis:", labelPaint)
-            drawLine(run.hypothesis)
-            y += 4f
+        section("Checkpoint & keputusan")
+        kv("Final ckpt", run.finalCheckpoint)
+        kv("Best ckpt", run.bestCheckpoint)
+        if (run.checkpointNotes.isNotBlank()) {
+            drawWrapped("Notes: ${run.checkpointNotes}")
         }
-        if (run.whatChanged.isNotBlank()) {
-            drawLine("Yang diubah:", labelPaint)
-            drawLine(run.whatChanged)
-            y += 4f
-        }
-        drawRow("Priority", run.priority)
+        drawWrapped("Keputusan: ${run.decision.ifBlank { "—" }}", accentPaint)
 
-        if (run.conclusion.isNotBlank()) {
-            section("6. Kesimpulan")
-            drawLine(run.conclusion)
-        }
+        section("Eksperimen")
+        if (run.parentRunName.isNotBlank()) kv("Parent run", run.parentRunName)
+        if (run.architecturePreset.isNotBlank()) kv("Preset", run.architecturePreset)
+        drawWrapped("Hipotesis: ${run.hypothesis.ifBlank { "—" }}")
+        drawWrapped("Perubahan: ${run.whatChanged.ifBlank { "—" }}")
+        kv("Priority", run.priority)
+        drawWrapped("Kesimpulan: ${run.conclusion.ifBlank { "—" }}")
 
-        y += 20f
-        checkNewPage()
-        canvas.drawText("Generated by TrainLog Analyzer", left, y, Paint().apply {
-            textSize = 9f
-            color = 0xFF9E9E9E.toInt()
-        })
+        // Footer on last page
+        y = max(y + 20f, bottomLimit - 10f)
+        ensure(12f)
+        canvas.drawText(
+            "Generated by TrainLog · page $pageIndex",
+            left,
+            bottomLimit + 20f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = 9f
+                color = 0xFF94A3B8.toInt()
+            }
+        )
 
         document.finishPage(page)
 
         val safeName = run.name.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(40)
         val fileName = "TrainLog_${safeName}_${System.currentTimeMillis()}.pdf"
         val file = File(context.cacheDir, fileName)
-        FileOutputStream(file).use { out ->
-            document.writeTo(out)
-        }
+        FileOutputStream(file).use { out -> document.writeTo(out) }
         document.close()
         return file
+    }
+
+    /**
+     * Draws a polished loss chart onto the PDF canvas. Returns the y coordinate
+     * just below the chart box.
+     */
+    private fun drawLossChart(
+        canvas: Canvas,
+        train: List<Double>,
+        eval: List<Double>,
+        left: Float,
+        top: Float,
+        width: Float,
+        height: Float
+    ): Float {
+        val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = 0xFFE2E8F0.toInt()
+            strokeWidth = 1.5f
+        }
+        val fillBg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = 0xFFF8FAFC.toInt()
+        }
+        canvas.drawRoundRect(left, top, left + width, top + height, 10f, 10f, fillBg)
+        canvas.drawRoundRect(left, top, left + width, top + height, 10f, 10f, boxPaint)
+
+        val padL = 42f
+        val padR = 14f
+        val padT = 16f
+        val padB = 24f
+        val plotL = left + padL
+        val plotT = top + padT
+        val plotW = width - padL - padR
+        val plotH = height - padT - padB
+
+        val ema = if (train.size >= 3) Calc.ema(train, 0.15) else emptyList()
+        val all = train + eval + ema
+        if (all.isEmpty()) return top + height
+
+        val minY = all.minOrNull()!!
+        val maxY = all.maxOrNull()!!
+        val yPad = max((maxY - minY) * 0.08, 1e-6)
+        val yMin = minY - yPad
+        val yMax = maxY + yPad
+        val span = max(yMax - yMin, 1e-12)
+
+        fun mapX(i: Int, n: Int): Float {
+            if (n <= 1) return plotL + plotW / 2
+            return plotL + plotW * i / (n - 1)
+        }
+        fun mapY(v: Double): Float {
+            val t = ((v - yMin) / span).toFloat()
+            return plotT + plotH * (1f - t)
+        }
+
+        // grid + y labels
+        val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFE2E8F0.toInt()
+            strokeWidth = 1f
+        }
+        val axisLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 9f
+            color = 0xFF64748B.toInt()
+        }
+        for (i in 0..4) {
+            val frac = i / 4f
+            val gy = plotT + plotH * frac
+            canvas.drawLine(plotL, gy, plotL + plotW, gy, gridPaint)
+            val value = yMax - span * frac
+            val label = "%.2f".format(value)
+            canvas.drawText(label, left + 4f, gy + 3f, axisLabel)
+        }
+
+        // axes
+        val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF94A3B8.toInt()
+            strokeWidth = 1.5f
+        }
+        canvas.drawLine(plotL, plotT, plotL, plotT + plotH, axisPaint)
+        canvas.drawLine(plotL, plotT + plotH, plotL + plotW, plotT + plotH, axisPaint)
+
+        fun drawArea(series: List<Double>, color: Int) {
+            if (series.size < 2) return
+            val path = Path()
+            series.forEachIndexed { i, v ->
+                val x = mapX(i, series.size)
+                val yy = mapY(v)
+                if (i == 0) path.moveTo(x, yy) else path.lineTo(x, yy)
+            }
+            path.lineTo(mapX(series.lastIndex, series.size), plotT + plotH)
+            path.lineTo(mapX(0, series.size), plotT + plotH)
+            path.close()
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                shader = LinearGradient(
+                    0f, plotT, 0f, plotT + plotH,
+                    color and 0x00FFFFFF or 0x38000000, // ~22% alpha
+                    color and 0x00FFFFFF or 0x05000000,
+                    Shader.TileMode.CLAMP
+                )
+            }
+            canvas.drawPath(path, paint)
+        }
+
+        fun drawSeries(series: List<Double>, color: Int, stroke: Float, dashed: Boolean = false) {
+            if (series.isEmpty()) return
+            val path = Path()
+            series.forEachIndexed { i, v ->
+                val x = mapX(i, series.size)
+                val yy = mapY(v)
+                if (i == 0) path.moveTo(x, yy) else path.lineTo(x, yy)
+            }
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                this.color = color
+                strokeWidth = stroke
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+                if (dashed) {
+                    pathEffect = android.graphics.DashPathEffect(floatArrayOf(10f, 8f), 0f)
+                }
+            }
+            canvas.drawPath(path, paint)
+            // last point
+            val lx = mapX(series.lastIndex, series.size)
+            val ly = mapY(series.last())
+            canvas.drawCircle(lx, ly, 4.5f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                this.color = color
+            })
+            canvas.drawCircle(lx, ly, 2f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                this.color = 0xFFFFFFFF.toInt()
+            })
+        }
+
+        val trainColor = 0xFF0F766E.toInt()
+        val evalColor = 0xFF7C3AED.toInt()
+        val emaColor = 0xFFEA580C.toInt()
+
+        if (train.isNotEmpty()) drawArea(train, trainColor)
+        if (ema.isNotEmpty()) drawSeries(ema, emaColor, 2f, dashed = true)
+        drawSeries(train, trainColor, 2.8f)
+        drawSeries(eval, evalColor, 2.2f)
+
+        // x labels: first / mid / last index
+        if (train.size >= 2) {
+            canvas.drawText("0", plotL, plotT + plotH + 14f, axisLabel)
+            canvas.drawText(
+                "${train.size / 2}",
+                plotL + plotW / 2 - 8f,
+                plotT + plotH + 14f,
+                axisLabel
+            )
+            canvas.drawText(
+                "${train.lastIndex}",
+                plotL + plotW - 16f,
+                plotT + plotH + 14f,
+                axisLabel
+            )
+        }
+
+        return top + height
     }
 
     private fun sharePdf(context: Context, file: File, title: String) {

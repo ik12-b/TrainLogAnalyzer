@@ -32,7 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.trainlog.analyzer.util.Calc
 
-private enum class LabTab { Curve, Ppl, Batch, Lr, Flops, Schedule, Mixture }
+private enum class LabTab { Curve, Ppl, Batch, Lr, Flops, Schedule, Mixture, Mfu }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +75,7 @@ fun LabScreen() {
                                     LabTab.Flops -> "FLOPs"
                                     LabTab.Schedule -> "Sched"
                                     LabTab.Mixture -> "Data"
+                                    LabTab.Mfu -> "MFU"
                                 }
                             )
                         }
@@ -89,6 +90,7 @@ fun LabScreen() {
                 LabTab.Flops -> FlopsPanel()
                 LabTab.Schedule -> SchedulePanel()
                 LabTab.Mixture -> MixturePanel()
+                LabTab.Mfu -> MfuPanel()
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -424,6 +426,44 @@ private fun MixturePanel() {
                 style = MaterialTheme.typography.bodySmall
             )
         }
+    }
+}
+
+
+@Composable
+private fun MfuPanel() {
+    var params by remember { mutableStateOf("7e9") }
+    var batch by remember { mutableStateOf("128") }
+    var seq by remember { mutableStateOf("2048") }
+    var sec by remember { mutableStateOf("1.5") }
+    var peak by remember { mutableStateOf("3.12e14") } // ~A100 bf16 rough ballpark example
+
+    val n = Calc.parseNum(params)
+    val b = Calc.parseNum(batch)
+    val s = Calc.parseNum(seq)
+    val sps = Calc.parseNum(sec)
+    val pk = Calc.parseNum(peak)
+    val tps = if (b != null && s != null && sps != null) Calc.tokensPerSec(b, s, sps) else null
+    val ach = if (n != null && tps != null) Calc.achievedFlopsPerSec(n, tps) else null
+    val mfu = if (ach != null && pk != null) Calc.mfuPercent(ach, pk) else null
+    val wall = if (sps != null) Calc.wallHoursFromSteps(10000.0, sps) else null
+
+    LabCard("MFU & throughput") {
+        Text("Achieved FLOPs/s ≈ 6·N·(tokens/s). MFU = achieved / peak device.", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(value = params, onValueChange = { params = it }, label = { Text("Params N") }, modifier = Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = batch, onValueChange = { batch = it }, label = { Text("Global batch") }, modifier = Modifier.weight(1f))
+            OutlinedTextField(value = seq, onValueChange = { seq = it }, label = { Text("Seq") }, modifier = Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = sec, onValueChange = { sec = it }, label = { Text("Sec/step") }, modifier = Modifier.weight(1f))
+            OutlinedTextField(value = peak, onValueChange = { peak = it }, label = { Text("Peak FLOPs/s") }, modifier = Modifier.weight(1f))
+        }
+        ResultBox("Tokens/s: ${tps?.let { "%.1f".format(it) } ?: "—"}")
+        ResultBox("Achieved FLOPs/s: ${ach?.let { Calc.formatFlops(it) + "/s" } ?: "—"}")
+        ResultBox("MFU: ${mfu?.let { "%.1f %%".format(it) } ?: "—"}")
+        ResultBox("Wall for 10k steps: ${wall?.let { "%.2f h".format(it) } ?: "—"}")
+        Text("Isi peak sesuai datasheet GPU/TPU (contoh kasar saja).", style = MaterialTheme.typography.bodySmall)
     }
 }
 

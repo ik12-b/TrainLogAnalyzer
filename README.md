@@ -1,30 +1,32 @@
 # TrainLog Analyzer (Android)
 
-Lab notebook for AI training runs — feature parity goals with the web app, plus researcher tools.
+Lab notebook for AI researchers training LLMs / CPT runs.
 
-## Features
+## Researcher sections (per run)
 
-1. **Import log** — paste HF Trainer / train/loss logs → series, plateau, new run
-2. **Loss charts** — train/eval curves on detail + import
-3. **Compare runs** — side-by-side metrics
-4. **Downstream checklist** — multi-task fields + forgetting note
-5. **Budget / ETA** — sec/step in Lab FLOPs tab + import
-6. **Scheduler playground** — cosine, linear, WSD, restarts
-7. **Data mixture planner** — weights → tokens, D/N ratio
-8. **Checkpoint picker** — notes `name:loss`, auto best
-9. **Experiment notes** — hypothesis / change / parent run fields
-10. **Report export** — PDF share + Markdown share
-11. **Plateau alerts** — notification when import detects plateau
-13. **Architecture presets** — model in data layer (`ArchPresets`)
-14. **Unit tests** — `CalcTest` / `LogImporter` (JUnit)
+1. **Identity** — git, seed, host, hardware, framework versions, parent run  
+2. **Model** — architecture, params, precision, attn, GaLore/LoRA, resume  
+3. **Data** — sources, batch, packing, mixture, tokens, epoch equivalent  
+4. **Optim** — optimizer, LR schedule, WD, clip, last LR/grad  
+5. **Learning curve** — loss series, plateau, PPL, gap, noise  
+6. **Compute** — sec/step, tok/s, FLOPs \(6ND\), MFU, wall/GPU-hours  
+7. **Downstream** — tasks, forgetting, harness, samples  
+8. **Checkpoints** — final/best + notes  
+9. **Diagnosis & decision** — hypothesis → change → result → next step  
+10. **Failures** — NaN, OOM, missing keys, slow save  
 
-*(12 cloud sync intentionally not included.)*
+## Tools
 
-## Open
+- Import HF Trainer / Tunix `[loss-monitor]` logs  
+- Loss charts (train / eval / EMA) on screen + PDF  
+- Compare runs, Lab calculators (PPL, schedule, mixture, MFU)  
+- Export PDF + Markdown  
 
-Android Studio → open `TrainLogAnalyzer` → Sync → Run (min SDK 26).
+## Build
 
 ```bash
-./gradlew test
 ./gradlew assembleDebug
+./gradlew test
 ```
+
+Min SDK 26. Room schema v3 (destructive migration on upgrade).
